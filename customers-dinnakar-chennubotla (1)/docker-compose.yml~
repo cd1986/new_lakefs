@@ -1,0 +1,62 @@
+version: "3"
+services:
+
+  lakefs-setup:
+    image: treeverse/lakefs:latest
+    container_name: lakefs-setup
+    networks:
+      - lakefs-network
+    depends_on:
+      - postgres
+    environment:
+      - LAKEFS_BLOCKSTORE_TYPE=local
+      - LAKEFS_AUTH_ENCRYPT_SECRET_KEY=some random secret string
+      - LAKEFS_DATABASE_CONNECTION_STRING=postgres://lakefs:lakefs@postgres/postgres?sslmode=disable
+    entrypoint: ["/app/wait-for", "postgres:5432", "--", "lakefs", "setup", "--user-name", "docker", "--access-key-id", "AKIAIOSFODNN7EXAMPLE", "--secret-access-key", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"]
+
+  lakefs:
+    image: treeverse/lakefs:latest
+    container_name: lakefs
+    networks:
+      - lakefs-network
+    ports: 
+      - 8000:8000
+    depends_on:
+      - postgres
+    environment:
+      - LAKEFS_BLOCKSTORE_TYPE=local
+      - LAKEFS_AUTH_ENCRYPT_SECRET_KEY=some random secret string
+      - LAKEFS_DATABASE_CONNECTION_STRING=postgres://lakefs:lakefs@postgres/postgres?sslmode=disable
+      - LAKEFS_BLOCKSTORE_LOCAL_PATH=/home/lakefs
+      - LAKEFS_GATEWAYS_S3_DOMAIN_NAME=s3.docker.lakefs.io:8000
+      - LAKEFS_STATS_ENABLED=false
+      - LAKEFS_LOGGING_LEVEL
+    entrypoint: ["/app/wait-for", "postgres:5432", "--", "/app/lakefs", "run"]
+
+  postgres:
+    image: postgres:11
+    container_name: postgres
+    networks:
+      - lakefs-network
+    environment:
+      POSTGRES_USER: lakefs
+      POSTGRES_PASSWORD: lakefs
+  
+  trino:
+    image: trinodb/trino
+    container_name: trino
+    networks:
+      - lakefs-network
+    volumes:
+      - ./etc/s3.properties:/opt/trino/catalog/s3.properties
+
+  trino-client:
+    image: trinodb/trino
+    networks:
+      - lakefs-network
+    profiles: ["client"]
+    entrypoint: ["trino", "--server", "trino:8080", "--catalog", "s3", "--schema", "default"]
+
+networks:
+  lakefs-network:
+    name: lakefs
